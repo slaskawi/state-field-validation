@@ -1,0 +1,75 @@
+= The OAuth State parameter playground
+
+This repo contains code for attacking a sample CLI application that uses https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-00#section-4.1[Authorization Code Grant]
+without the "state" parameter validation.
+
+== Starting Keycloak.x
+
+https://www.keycloak.org/2020/12/first-keycloak-x-release.adoc[Keycloak.x] is a new Keycloak distribution that has been built on top of Quarkus.
+Among many other features, it has so-called Developer Mode, which enables you to run it without doing much configuration.
+But remember - this mode shall not be used in production (or even staging). It's purely a development thing:
+
+.Starting Keycloak.x
+----
+$ cd $KC/bin
+$ ./kc.sh start-dev
+...
+2021-05-17 09:24:43,610 INFO  [io.quarkus] (main) Profile dev activated.
+2021-05-17 09:24:43,610 INFO  [io.quarkus] (main) Installed features: [agroal, cdi, hibernate-orm, jdbc-h2, jdbc-mariadb, jdbc-mysql, jdbc-postgresql, keycloak, mutiny, narayana-jta, resteasy, resteasy-jackson, smallrye-context-propagation, smallrye-health, smallrye-metrics, vertx, vertx-web]
+----
+
+Keycloak.x is now ready to serve the requests. You can log into the Admin Console using `admin/admin` credentials:
+
+image::img/keycloak-admin.png[]
+
+== Create a CLI Client
+
+The next step is to create a public CLI Client that will be used by the CLI application. The configuration is the following:
+
+image::img/cli-client.png[]
+
+Here are some highlights:
+
+- The Access Type is set to "public" as we won't be using any Client Credentials. Later on, we'll be enhancing this scenario.
+- We specify a valid Redirect URL. Note, it's HTTP without TLS. That's fine as we're connecting to the localhost so nothing leaves our local box.
+
+== Create two users
+
+One of them will be for attacker and one of them for the victim. For the sake of this demo they will be called:
+- `attacker` (password: `attacker`)
+- `victim` (password: `victim`)
+
+image::img/create-user.png[]
+
+== Run the demo
+
+Now use your favorite IDE or `go` command line to run the CLI application. You will be asked to provide username and password:
+
+image::img/login.png[]
+
+Login as `attacker`. Then get back to the CLI application and do not exchange the Code for a token:
+
+```
+Convert code=6375b6b9-964c-411f-a0a1-ec68222c9f16.45af03e6-a7c1-40fb-83f4-88a87000b978.401adfc3-804c-4af4-958f-dbfffa4dd818 to token? [y/n]n
+Just in case you wanted to replay this:
+curl "http://localhost:8081/sso-callback?code=6375b6b9-964c-411f-a0a1-ec68222c9f16.45af03e6-a7c1-40fb-83f4-88a87000b978.401adfc3-804c-4af4-958f-dbfffa4dd818"
+```
+
+Now, try to rerun the CLI application. Before entering victim's username, invoke the command from the above:
+
+```
+$ curl "http://localhost:8081/sso-callback?code=6375b6b9-964c-411f-a0a1-ec68222c9f16.45af03e6-a7c1-40fb-83f4-88a87000b978.401adfc3-804c-4af4-958f-dbfffa4dd818"
+```
+
+Once you do that, you will notice the following information in the CLI application:
+
+```
+Obtaining payment information for user attacker
+```
+
+This means the attacker treated the victim to use his won access token instead of users.
+
+== So why is this dangerous?
+
+You might think this is not dangerous at all but imagine that you're obtaining payment information or uploading sensitive data somewhere.
+In this case, you'd be doing that for attackers account...ouch!
